@@ -15,8 +15,9 @@ def guardar_en_dataframe(productos):
     return df
 
 
-    # Librerías
+   # Librerías
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -24,6 +25,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
+import time
 import re
 
 # Configuración del navegador
@@ -43,43 +45,23 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 url = "https://www.amazon.com/"
 driver.get(url)
 
-# Esperando cuadro de búsqueda
-wait = WebDriverWait(driver, 15)
-search_box = wait.until(EC.presence_of_element_located((By.ID, "twotabsearchtextbox")))
-search_box.send_keys(busqueda)
-search_box.send_keys(Keys.RETURN)
 
-def extraer_resultados_busqueda(driver):
+max_reintentos = 10
+
+
+for intento in range(max_reintentos):
     try:
-        # Extraigo el texto de la página de resultados de búsqueda
-        result_text = driver.find_element(By.XPATH, "//span[contains(text(),'resultados para')]").text
-        print("Texto extraído:", result_text)
-
-        # Convertimos el texto extraído a un número
-        match = re.search(r'(\d+)\s+a\s+(\d+)', result_text)
-        if match:
-            numero_deseado = int(match.group(2))
-            print(result_text)
-        else:
-            numero_deseado = 0
-        return numero_deseado
-    except Exception as e:
-        print(f"Error al extraer resultados de búsqueda: {e}")
-        return 0
-
-def extraer_cantidad_paginas(driver):
-    try:
-        paginas = driver.find_elements(By.XPATH, "//*[contains(@class,'s-pagination-item') and not(contains(@class,'dots'))]")
-
-        num_paginas = [int(i.text) for i in paginas if i.text.isdigit()]
-
-        total_pages = max(num_paginas, default=1)
-
-        print("Total páginas:", total_pages)
-        return total_pages
-    except Exception as e:
-        print(f"Error al extraer la cantidad de páginas: {e}")
-        return 1
+        wait = WebDriverWait(driver, 15)
+        search_box = wait.until(EC.presence_of_element_located((By.ID, "twotabsearchtextbox")))
+        search_box.send_keys(busqueda)
+        search_box.send_keys(Keys.RETURN)
+        break
+    except TimeoutException:
+        print(f"No se encontró el campo de búsqueda. Recargando... (Intento {intento + 1})")
+        driver.refresh()
+        time.sleep(2)
+else:
+    print("No se pudo encontrar el campo después de varios intentos.")
 
 # Rutas XPATH
 titulo = './/h2'
@@ -99,12 +81,40 @@ xpath_titulos = (
     " | .//*[@id='dynamic-bb']/div/div/div[1]"
 )
 
-# Funcion principal
-def extraer_elemento(elemento, xpath_variable):
+
+def extraer_resultados_busqueda(driver):
     try:
-        return elemento.find_element(By.XPATH, xpath_variable).text
-    except:
-        return "General"
+        # Extraigo el texto de la página de resultados de búsqueda
+        result_text = driver.find_element(By.XPATH, "//span[contains(text(),'resultados para')]").text
+        print("Texto extraído:", result_text)
+
+        # Convertimos el texto extraído a un número
+        match = re.search(r'(\d+)\s+a\s+(\d+)', result_text)
+        if match:
+            numero_deseado = int(match.group(2))
+            print(result_text)
+        else:
+            numero_deseado = 0
+        return numero_deseado
+    except Exception as e:
+        print(f"Error al extraer resultados de búsqueda: {e}")
+        return 0
+
+
+def extraer_cantidad_paginas(driver):
+    try:
+        paginas = driver.find_elements(By.XPATH,
+                                       "//*[contains(@class,'s-pagination-item') and not(contains(@class,'dots'))]")
+
+        num_paginas = [int(i.text) for i in paginas if i.text.isdigit()]
+
+        total_pages = max(num_paginas, default=1)
+
+        print("Total páginas:", total_pages)
+        return total_pages
+    except Exception as e:
+        print(f"Error al extraer la cantidad de páginas: {e}")
+        return 1
 
 
 
@@ -121,38 +131,39 @@ def extraer_precio(elemento):
         whole = elemento.find_element(By.XPATH, precioWhole).text.strip().replace(",", "")
         fraction = elemento.find_element(By.XPATH, precioFraction).text.strip()
         precio_actual = f"{whole}.{fraction}"
-        return precio_actual
     except:
         try:
-            alt_price = elemento.find_element(By.XPATH, precio2).text.strip().split("$")[1]
-            return alt_price if alt_price else "N/A"
+            precio_actual = elemento.find_element(By.XPATH, precio2).text.strip().split("$")[1]
+            precio_actual = precio_actual.replace(",", "")
         except:
-            return "N/A"
+            precio_actual = "N/A"
+    return precio_actual
 
 
 def extraer_precio_full(elemento):
     try:
         precio_full = elemento.find_element(By.XPATH,
-                                               ".//span[@class='a-price a-text-price']//span[@class='a-offscreen']")
+                                            ".//span[@class='a-price a-text-price']//span[@class='a-offscreen']")
         precio_full = precio_full.get_attribute("textContent").strip().split("$")[1]
+        precio_full = precio_full.replace(",", "")
     except:
         precio_full = "N/A"
     return precio_full
+
 
 def extraer_descuento(precio_full, precio_actual):
     try:
         precio_actual = float(precio_actual) if precio_actual != "N/A" else 0
         precio_full = float(precio_full) if precio_full != "N/A" else 0
         descuento = precio_full - precio_actual
-    
+
         if descuento < 0:
             descuento = 0
     except:
-        return "N/A"
-    
+        return "Error"
+
     return descuento
-        
-    
+
 
 def extraer_calificacion(elemento):
     try:
@@ -160,6 +171,28 @@ def extraer_calificacion(elemento):
         return calificacion_elem.get_attribute("textContent").strip().split(" ")[0]
     except:
         return "N/A"
+
+
+def extraer_observacion(item, xpath_patrocinado):
+    # PATROCINADOS
+    try:
+        patrocinado = item.find_element(By.XPATH, xpath_patrocinado)
+        result_patrocinado = "Patrocinado"
+    except:
+
+        try:
+            contenedor_patrocinado = item.find_element(By.XPATH, ".//ancestor::div[contains(@class,'s-include-content-margin s-border-bottom s-border-top-overlap s-widget-padding-bottom')]")
+
+            etiqueta_patrocinado = contenedor_patrocinado.find_elements(By.XPATH, xpath_patrocinado)
+
+            if etiqueta_patrocinado:
+                result_patrocinado = "Patrocinado"
+            else:
+                result_patrocinado = "General"
+
+        except:
+            result_patrocinado = "General"
+    return result_patrocinado
 
 
 # Lista final de resultados
@@ -178,14 +211,13 @@ while True:
     all_products = main_products + carousel_products
 
     for prod in all_products:
-
         info = {
             "Título": extraer_nombre(prod),
             "Precio_actual": extraer_precio(prod),
             "Pecio_full": extraer_precio_full(prod),
             "Descuento": extraer_descuento(extraer_precio_full(prod), extraer_precio(prod)),
             "Calificación": extraer_calificacion(prod),
-            "Observación": extraer_elemento(prod, observacion)
+            "Observación": extraer_observacion(prod, observacion)
         }
         datos.append(info)
 
@@ -203,5 +235,4 @@ while True:
 df = pd.DataFrame(datos)
 df.to_excel("productos_amazon.xlsx", index=False)
 print("Datos guardados en productos_amazon.xlsx")
-
 
