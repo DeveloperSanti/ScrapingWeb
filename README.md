@@ -1,21 +1,4 @@
-def guardar_en_dataframe(productos):
-    df = pd.DataFrame(productos)
-    df["precio_actual"] = df["precio_actual"].str.replace(r'[^\d.]', '', regex=True)  # Eliminar símbolos
-    df["precio_actual"] = pd.to_numeric(df["precio_actual"], errors="coerce")#convertimos la columna "precio_actual" a numerico
-    df["precio_actual"] = np.where(df["precio_actual"] >= 50, df["precio_actual"].round(), df["precio_actual"])# Aplicar redondeo solo a los valores >= 50
- 
-    df["precio_anterior"] = df["precio_anterior"].str.replace(r'[^\d.]', '', regex=True)  # Eliminar símbolos
-    df["precio_anterior"] = pd.to_numeric(df["precio_anterior"], errors="coerce")  # Convertir a float
-    df["precio_anterior"] = df["precio_anterior"].fillna(df["precio_actual"])
-    # Reemplazar NaN en "precio_anterior" con "precio_actual"
- 
-    df = df[df["nombre"].str.contains("iPhone", na=False)]
-    df = df.sort_values(by='precio_actual', ascending=False) #Ordena los precios de mayor a menor
- 
-    return df
-
-
-   # Librerías
+# Librerías
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.service import Service
@@ -25,6 +8,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
+import numpy as np
 import time
 import re
 
@@ -73,8 +57,8 @@ calificacion = (
 )
 observacion = ".//div[@class='a-row a-spacing-micro']//span//a//span[@class='a-color-secondary']"
 xpath_titulos = (
-    ".//div[@class='a-section a-spacing-none a-spacing-top-small s-title-instructions-style']//a//h2"
-    " | .//div[@class='a-section a-spacing-none puis-padding-right-small s-title-instructions-style']//a//h2"
+    ".//div[@class='a-section a-spacing-none a-spacing-top-small s-title-instructions-style']//a//h2//span"
+    " | .//div[@class='a-section a-spacing-none puis-padding-right-small s-title-instructions-style']//a//h2//span"
     " | .//div[@class='a-section a-spacing-none puis-padding-right-small s-title-instructions-style faceout-product-title']//a//h2"
     " | .//div[@class='p13n-sc-uncoverable-faceout']//div//div//a//span//div"
     " | .//div[@class='a-box-inner a-padding-none']//div[@class='a-row']//span[@class='a-color-base sp_short_strip_title']"
@@ -121,9 +105,10 @@ def extraer_cantidad_paginas(driver):
 def extraer_nombre(item):
     try:
         nombre = item.find_element(By.XPATH, xpath_titulos).text
-        return nombre[:35]
+        nombre = nombre[:35]
     except:
-        return "no disponible"
+        pass
+    return nombre
 
 
 def extraer_precio(elemento):
@@ -212,12 +197,12 @@ while True:
 
     for prod in all_products:
         info = {
-            "Título": extraer_nombre(prod),
-            "Precio_actual": extraer_precio(prod),
-            "Pecio_full": extraer_precio_full(prod),
-            "Descuento": extraer_descuento(extraer_precio_full(prod), extraer_precio(prod)),
-            "Calificación": extraer_calificacion(prod),
-            "Observación": extraer_observacion(prod, observacion)
+            "titulo": extraer_nombre(prod),
+            "precio_actual": extraer_precio(prod),
+            "precio_full": extraer_precio_full(prod),
+            "descuento": extraer_descuento(extraer_precio_full(prod), extraer_precio(prod)),
+            "calificación": extraer_calificacion(prod),
+            "observación": extraer_observacion(prod, observacion)
         }
         datos.append(info)
 
@@ -233,6 +218,31 @@ while True:
 
 # Guardar en Excel
 df = pd.DataFrame(datos)
+
+#limpieza de datos
+#Redondear precio
+df["precio_actual"] = df["precio_actual"].replace("N/A", "0")
+df["precio_actual"] = pd.to_numeric(df["precio_actual"], errors="coerce")
+df["precio_actual"] = np.where(
+    (df["precio_actual"] % 1) >= 0.5,
+    np.ceil(df["precio_actual"]),
+    np.floor(df["precio_actual"])
+)
+
+
+#Reemplazar N/A en los precios
+df["precio_full"] = pd.to_numeric(df["precio_full"], errors="coerce")
+df["precio_full"] = df["precio_full"].fillna(df["precio_actual"])
+
+#Ordenar de forma ascendente
+df = df.sort_values(by="precio_actual", ascending=False)
+
+#filtrar
+df = df[df['titulo'].str.contains('portátil', case=False, na=False)]
+df = df[~df['titulo'].str.contains('cargador', case=False, na=False)]
+
+
 df.to_excel("productos_amazon.xlsx", index=False)
 print("Datos guardados en productos_amazon.xlsx")
 
+ 
